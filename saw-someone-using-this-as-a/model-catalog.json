@@ -1,0 +1,72 @@
+{
+  "models": [
+    {
+      "id": "demo-local-split",
+      "name": "Demo local split",
+      "family": "Built-in test",
+      "stems": "vocals + instrumental",
+      "availability": "Included",
+      "runner": "demo",
+      "notes": "Creates quick test stems without installing any AI model. Use this to verify the workflow."
+    },
+    {
+      "id": "demucs-htdemucs-ft",
+      "name": "Demucs v4 htdemucs_ft",
+      "family": "Demucs",
+      "stems": "vocals + instrumental",
+      "availability": "Freely available; downloads automatically through Demucs",
+      "runner": "command",
+      "command": ".venv-demucs/bin/python -m demucs --two-stems=vocals -n htdemucs_ft --out {output_dir} {input_file}",
+      "expected_output": "demucs",
+      "notes": "Good first local test after running setup-demucs.sh. Reliable, simple, and does not need UVR."
+    },
+    {
+      "id": "demucs-htdemucs-6s",
+      "name": "Demucs v4 htdemucs_6s",
+      "family": "Demucs",
+      "stems": "vocals, drums, bass, guitar, piano, other",
+      "availability": "Freely available; downloads automatically through Demucs",
+      "runner": "command",
+      "command": ".venv-demucs/bin/python -m demucs -n htdemucs_6s --out {output_dir} {input_file}",
+      "expected_output": "demucs",
+      "notes": "Useful when you want more DAW-style lanes from one local model. Run setup-demucs.sh first."
+    },
+    {
+      "id": "uvr-custom-command",
+      "name": "UVR or audio-separator custom command",
+      "family": "UVR-compatible",
+      "stems": "depends on selected model",
+      "availability": "Requires your local UVR/audio-separator setup",
+      "runner": "manual",
+      "command": "",
+      "notes": "Use this slot for a local CLI command once your UVR-compatible model path is known."
+    },
+    {
+      "id": "msst-custom-command",
+      "name": "MSST custom command",
+      "family": "MSST",
+      "stems": "depends on config/checkpoint",
+      "availability": "Requires your local MSST checkout and model files",
+      "runner": "manual",
+      "command": "",
+      "notes": "Best for newer Roformer/SCNet models that the guide says work better in MSST than UVR."
+    }
+  ],
+  "recommendations": [
+    {
+      "name": "MVSep Ensemble 11.93",
+      "why": "The supplied guide lists it as a top vocal/instrumental ensemble, with vocal SDR 11.93 and instrumental SDR 18.24.",
+      "caveat": "This is an MVSep service ensemble, not the easiest single local download."
+    },
+    {
+      "name": "Unwa BS-Roformer Resurrection instrumental",
+      "why": "The guide calls it public, UVR-compatible, fast, about 204 MB, and strong for instrumental extraction.",
+      "caveat": "It is an instrumental-focused model, so pair it with a strong vocal model if you want a true ensemble."
+    },
+    {
+      "name": "Demucs htdemucs_ft",
+      "why": "Best practical local smoke test because the Demucs CLI can fetch it automatically and the app can run it with one command.",
+      "caveat": "It is not the bleeding-edge ensemble from the guide, but it is the easiest free local test path."
+    }
+  ]
+}

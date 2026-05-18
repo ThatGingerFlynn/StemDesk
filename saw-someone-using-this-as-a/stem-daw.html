@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stem Desk</title>
+    <link rel="stylesheet" href="stem-daw.css">
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <h1>Stem Desk</h1>
+          <p>Separate locally, then play, mute, and solo the resulting stems in sync.</p>
+        </div>
+        <div class="importers">
+          <label class="button primary">
+            <input id="folderPicker" type="file" webkitdirectory multiple>
+            Open stem folder
+          </label>
+          <label class="button">
+            <input id="filePicker" type="file" accept="audio/*" multiple>
+            Add audio files
+          </label>
+        </div>
+      </header>
+
+      <section class="transport" aria-label="Transport controls">
+        <button id="playButton" class="transport-button" disabled>Play</button>
+        <button id="stopButton" class="transport-button" disabled>Stop</button>
+        <div class="time" id="timeReadout">00:00.000 / 00:00.000</div>
+        <input id="seekSlider" class="seek" type="range" min="0" max="1000" value="0" disabled>
+      </section>
+
+      <section class="workspace">
+        <aside class="library">
+          <h2>Session</h2>
+          <dl>
+            <div>
+              <dt>Tracks</dt>
+              <dd id="trackCount">0</dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd id="durationReadout">00:00.000</dd>
+            </div>
+          </dl>
+          <button id="clearButton" class="button full" disabled>Clear session</button>
+
+          <form class="separator" id="separatorForm">
+            <h2>Separate Audio</h2>
+            <label class="field">
+              <span>Input audio</span>
+              <input id="sourceAudio" type="file" accept="audio/*">
+            </label>
+            <label class="field">
+              <span>Model</span>
+              <select id="modelSelect"></select>
+            </label>
+            <label class="field">
+              <span>Output folder</span>
+              <input id="outputDir" type="text" value="">
+            </label>
+            <label class="field command-field">
+              <span>Command</span>
+              <textarea id="commandOverride" rows="4" placeholder="Optional command template"></textarea>
+            </label>
+            <button id="runSeparator" class="button primary full" type="submit">Run separation</button>
+            <p class="model-note" id="modelNote"></p>
+            <pre class="status-log" id="statusLog"></pre>
+          </form>
+        </aside>
+
+        <section class="tracks" id="tracks" aria-live="polite">
+          <div class="empty-state">
+            <strong>No stems loaded</strong>
+            <span>Open a UVR output folder or add individual audio files.</span>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="trackTemplate">
+      <article class="track">
+        <div class="track-controls">
+          <div class="track-title"></div>
+          <div class="buttons">
+            <button class="mini mute" type="button">Mute</button>
+            <button class="mini solo" type="button">Solo</button>
+          </div>
+          <label class="volume">
+            <span>Vol</span>
+            <input type="range" min="0" max="1.5" value="1" step="0.01">
+          </label>
+        </div>
+        <div class="lane">
+          <canvas></canvas>
+          <div class="playhead"></div>
+        </div>
+      </article>
+    </template>
+
+    <script src="stem-daw.js"></script>
+  </body>
+</html>
