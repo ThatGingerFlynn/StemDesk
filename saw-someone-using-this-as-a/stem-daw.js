@@ -155,9 +155,11 @@ async function runLocalSeparation(event) {
 
       // Generic error handler for connection issues
       eventSource.onerror = (e) => {
-        if (eventSource.readyState === EventSource.CLOSED) {
+        if (eventSource.readyState === EventSource.CONNECTING) {
+          appendStatus("\nConnecting to stream...");
+        } else if (eventSource.readyState === EventSource.CLOSED) {
           // If it closed without a 'done' event, it might be a server crash or timeout
-          appendStatus("\nConnection lost.");
+          appendStatus("\nConnection lost. The process may still be running on the server.");
           setBusy(false);
           runSeparator.disabled = false;
           reject(new Error("Connection lost."));

@@ -27,8 +27,11 @@ $PYTHON_EXE -m venv .venv-demucs
 .venv-demucs/bin/python -m pip install --upgrade pip
 
 # We install soundfile and ensure torchcodec is gone.
-# torchaudio 2.5.0+ sometimes tries to use torchcodec by default.
+# torchaudio 2.5.0+ has a bug where it tries to use torchcodec for saving even if not installed.
+# We downgrade torchaudio to a version before this behavior was introduced (e.g., <2.5.0)
+# or ensure soundfile is the primary backend.
 .venv-demucs/bin/python -m pip install soundfile
+.venv-demucs/bin/python -m pip install "torchaudio<2.5.0"
 .venv-demucs/bin/python -m pip install demucs
 .venv-demucs/bin/python -m pip uninstall -y torchcodec || true
 

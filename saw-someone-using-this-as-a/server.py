@@ -149,6 +149,8 @@ def run_separator_stream(model: dict, input_file: Path, output_dir: Path, comman
   env.setdefault("TORCH_HOME", str(ROOT / ".cache" / "torch"))
   env.setdefault("XDG_CACHE_HOME", str(ROOT / ".cache"))
   env["TORCHAUDIO_USE_TORCHCODEC"] = "0"
+  # Set soundfile as the backend for torchaudio
+  env["TORCHAUDIO_BACKEND"] = "soundfile"
 
   try:
     process = subprocess.Popen(
@@ -318,8 +320,13 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
       temp_file_path = None # Moved successfully
 
       for chunk in run_separator_stream(model, input_file, session_dir, command_override):
-        self.wfile.write(chunk.encode("utf-8"))
-        self.wfile.flush()
+        try:
+          self.wfile.write(chunk.encode("utf-8"))
+          self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+          # Client disconnected, we should stop but keep the process running if it's already far along?
+          # Actually, for simplicity, we just stop yielding
+          break
 
     except Exception as exc:
       err_msg = f"event: error\ndata: {str(exc)}\n\n"
