@@ -1,15 +1,6 @@
 {
   "models": [
     {
-      "id": "demo-local-split",
-      "name": "Demo local split",
-      "family": "Built-in test",
-      "stems": "vocals + instrumental",
-      "availability": "Included",
-      "runner": "demo",
-      "notes": "Creates quick test stems without installing any AI model. Use this to verify the workflow."
-    },
-    {
       "id": "demucs-htdemucs-ft",
       "name": "Demucs v4 htdemucs_ft",
       "family": "Demucs",
