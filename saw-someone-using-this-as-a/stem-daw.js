@@ -96,25 +96,77 @@ async function runLocalSeparation(event) {
   stop();
   setBusy(true);
   runSeparator.disabled = true;
-  setStatus("Running separation. This can take a while for real AI models...");
+  setStatus("Uploading audio to server...");
 
   try {
+    // Step 1: Upload the file
     const formData = new FormData();
     formData.append("audio", audio);
-    formData.append("model_id", modelSelect.value);
-    formData.append("output_dir", outputDir.value);
-    formData.append("command", commandOverride.value);
 
-    const response = await fetch(`${apiBase}/api/separate`, { method: "POST", body: formData });
-    const payload = await response.json();
-    if (!payload.ok) throw new Error(payload.error || "Separation failed.");
+    const uploadResponse = await fetch(`${apiBase}/api/separate`, { method: "POST", body: formData });
+    const uploadPayload = await uploadResponse.json();
+    if (!uploadPayload.ok) throw new Error(uploadPayload.error || "Upload failed.");
 
-    setStatus(`Created ${payload.stems.length} stem(s) in:\n${payload.session_dir}\n\nLoading stems...`);
-    await loadStemUrls(payload.stems);
-    setStatus(`Loaded ${payload.stems.length} stem(s).\n${payload.session_dir}`);
+    setStatus("Starting separation...");
+    statusLog.textContent = ""; // Clear log for fresh output
+
+    // Step 2: Connect to EventSource for streaming logs
+    const params = new URLSearchParams({
+      model_id: modelSelect.value,
+      output_dir: outputDir.value,
+      command: commandOverride.value,
+      file_id: uploadPayload.file_id,
+      filename: uploadPayload.filename
+    });
+
+    return new Promise((resolve, reject) => {
+      const eventSource = new EventSource(`${apiBase}/api/separate-stream?${params.toString()}`);
+
+      eventSource.addEventListener("log", (e) => {
+        appendStatus(e.data);
+      });
+
+      eventSource.addEventListener("done", async (e) => {
+        const payload = JSON.parse(e.data);
+        eventSource.close();
+
+        appendStatus(`\nCreated ${payload.stems.length} stem(s) in:\n${payload.session_dir}\n\nLoading stems...`);
+        try {
+          await loadStemUrls(payload.stems);
+          appendStatus(`\nLoaded ${payload.stems.length} stem(s).`);
+          resolve();
+        } catch (err) {
+          appendStatus(`\nError loading stems: ${err.message}`);
+          reject(err);
+        } finally {
+          setBusy(false);
+          runSeparator.disabled = false;
+        }
+      });
+
+      eventSource.addEventListener("error", (e) => {
+        const data = e.data || "An unknown error occurred during streaming.";
+        appendStatus(`\nError: ${data}`);
+        eventSource.close();
+        setBusy(false);
+        runSeparator.disabled = false;
+        reject(new Error(data));
+      });
+
+      // Generic error handler for connection issues
+      eventSource.onerror = (e) => {
+        if (eventSource.readyState === EventSource.CLOSED) {
+          // If it closed without a 'done' event, it might be a server crash or timeout
+          appendStatus("\nConnection lost.");
+          setBusy(false);
+          runSeparator.disabled = false;
+          reject(new Error("Connection lost."));
+        }
+      };
+    });
+
   } catch (error) {
     setStatus(error.message);
-  } finally {
     setBusy(false);
     runSeparator.disabled = false;
   }
@@ -404,6 +456,11 @@ function setBusy(isBusy) {
 
 function setStatus(message) {
   statusLog.textContent = message;
+}
+
+function appendStatus(message) {
+  statusLog.textContent += message + "\n";
+  statusLog.scrollTop = statusLog.scrollHeight;
 }
 
 function cleanName(name) {
