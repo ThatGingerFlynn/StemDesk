@@ -30,7 +30,7 @@ let animationFrame = 0;
 
 const supportedAudio = /\.(aac|aif|aiff|flac|m4a|mp3|ogg|opus|wav|webm)$/i;
 const apiBase = window.location.protocol === "file:" ? "http://127.0.0.1:8765" : "";
-const defaultOutputDir = "/Users/plasmanf/Documents/Codex/2026-05-18/saw-someone-using-this-as-a/separated-output";
+const defaultOutputDir = "separated-output";
 
 outputDir.value = defaultOutputDir;
 
