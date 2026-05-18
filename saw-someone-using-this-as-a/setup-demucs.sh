@@ -21,13 +21,16 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
 fi
 
 # Create or update the virtual environment
-python3.11 -m venv .venv-demucs
+# Using 'python3' as a fallback if 'python3.11' is not explicitly available
+PYTHON_EXE=$(command -v python3.11 || command -v python3)
+$PYTHON_EXE -m venv .venv-demucs
 .venv-demucs/bin/python -m pip install --upgrade pip
 
-# We remove torchcodec because it often has strict FFmpeg version requirements (like FFmpeg 4)
-# that conflict with modern Homebrew FFmpeg (often FFmpeg 7+). Demucs does not need it.
-.venv-demucs/bin/python -m pip uninstall -y torchcodec || true
+# We install soundfile and ensure torchcodec is gone.
+# torchaudio 2.5.0+ sometimes tries to use torchcodec by default.
+.venv-demucs/bin/python -m pip install soundfile
 .venv-demucs/bin/python -m pip install demucs
+.venv-demucs/bin/python -m pip uninstall -y torchcodec || true
 
 .venv-demucs/bin/python -m demucs --help >/dev/null
 

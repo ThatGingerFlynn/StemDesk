@@ -117,51 +117,76 @@ def parse_multipart_form(handler: SimpleHTTPRequestHandler) -> tuple[dict[str, s
   return fields, files
 
 
-def run_separator(model: dict, input_file: Path, output_dir: Path, command_override: str = "") -> tuple[list[Path], list[str]]:
-  logs: list[str] = []
+def run_separator_stream(model: dict, input_file: Path, output_dir: Path, command_override: str = ""):
   runner = model.get("runner")
 
   if runner == "demo":
     stem_dir = output_dir / f"{safe_name(input_file.name)} - demo stems"
+    yield "event: log\ndata: Creating demo stems...\n\n"
+    time.sleep(1)
     write_demo_wav(stem_dir / "instrumental.wav", 220)
     write_demo_wav(stem_dir / "vocals.wav", 440)
-    logs.append("Created demo stems.")
-    return audio_files_under(stem_dir), logs
+    yield "event: log\ndata: Created demo stems.\n\n"
+    stems = audio_files_under(stem_dir)
+    yield f"event: done\ndata: {json.dumps({'session_dir': str(output_dir.parent), 'stems': [{'name': p.stem, 'path': str(p), 'url': f'/api/audio?path={p}'} for p in stems if '_input' not in p.parts]})}\n\n"
+    return
 
   template = command_override.strip() or model.get("command", "").strip()
   if not template:
-    raise RuntimeError("This model needs a command before it can run locally.")
+    yield f"event: error\ndata: This model needs a command before it can run locally.\n\n"
+    return
 
   output_dir.mkdir(parents=True, exist_ok=True)
   command = format_command(template, input_file, output_dir)
   executable = shutil.which(command[0])
   if executable is None and command[0] not in {"python", "python3"}:
-    raise RuntimeError(f"Could not find '{command[0]}' on PATH.")
+    yield f"event: error\ndata: Could not find '{command[0]}' on PATH.\n\n"
+    return
 
-  logs.append("$ " + " ".join(shlex.quote(part) for part in command))
+  yield f"event: log\ndata: $ {' '.join(shlex.quote(part) for part in command)}\n\n"
+
   env = os.environ.copy()
   env.setdefault("TORCH_HOME", str(ROOT / ".cache" / "torch"))
   env.setdefault("XDG_CACHE_HOME", str(ROOT / ".cache"))
+  env["TORCHAUDIO_USE_TORCHCODEC"] = "0"
 
   try:
-    process = subprocess.run(command, cwd=str(ROOT), capture_output=True, text=True, env=env)
-  except FileNotFoundError as exc:
-    raise RuntimeError(f"Could not find '{command[0]}'. Install it or update the command preset.") from exc
-  if process.stdout:
-    logs.append(process.stdout)
-  if process.stderr:
-    logs.append(process.stderr)
-  combined_output = "\n".join([process.stdout or "", process.stderr or ""])
-  if "No module named demucs" in combined_output:
-    raise RuntimeError("Demucs is not installed for this Python. Install it with: python3 -m pip install demucs")
-  if process.returncode != 0:
-    tail = "\n".join(combined_output.strip().splitlines()[-12:])
-    raise RuntimeError(f"Separator exited with code {process.returncode}.\n{tail}")
+    process = subprocess.Popen(
+      command,
+      cwd=str(ROOT),
+      stdout=subprocess.PIPE,
+      stderr=subprocess.STDOUT,
+      text=True,
+      env=env,
+      bufsize=1,
+      universal_newlines=True
+    )
 
-  stems = [path for path in audio_files_under(output_dir) if "_input" not in path.parts]
-  if not stems:
-    raise RuntimeError("The separator finished, but no audio stems were found in the output folder.")
-  return stems, logs
+    full_output = []
+    for line in process.stdout:
+      full_output.append(line)
+      yield f"event: log\ndata: {line.strip()}\n\n"
+
+    process.wait()
+
+    if "No module named demucs" in "".join(full_output):
+      yield "event: error\ndata: Demucs is not installed for this Python. Install it with: python3 -m pip install demucs\n\n"
+      return
+
+    if process.returncode != 0:
+      tail = "".join(full_output[-12:]).strip()
+      yield f"event: error\ndata: Separator exited with code {process.returncode}.\n{tail}\n\n"
+      return
+
+    stems = [path for path in audio_files_under(output_dir) if "_input" not in path.parts]
+    if not stems:
+      yield "event: error\ndata: The separator finished, but no audio stems were found in the output folder.\n\n"
+      return
+
+    yield f"event: done\ndata: {json.dumps({'session_dir': str(output_dir.parent), 'stems': [{'name': p.stem, 'path': str(p), 'url': f'/api/audio?path={p}'} for p in stems if '_input' not in p.parts]})}\n\n"
+
+  except Exception as exc:
+    yield f"event: error\ndata: {str(exc)}\n\n"
 
 
 class StemDeskHandler(SimpleHTTPRequestHandler):
@@ -182,8 +207,19 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
   def do_POST(self) -> None:
     parsed = urlparse(self.path)
     if parsed.path == "/api/separate":
+      # We no longer handle multipart in the same way for streaming
       return self.handle_separate()
     self.send_error(404, "Unknown endpoint")
+
+  def do_GET(self) -> None:
+    parsed = urlparse(self.path)
+    if parsed.path == "/api/models":
+      return self.send_json(load_catalog())
+    if parsed.path == "/api/audio":
+      return self.send_audio(parsed.query)
+    if parsed.path == "/api/separate-stream":
+      return self.handle_separate_stream(parsed.query)
+    return super().do_GET()
 
   def send_json(self, payload: dict, status: int = 200) -> None:
     body = json.dumps(payload, indent=2).encode("utf-8")
@@ -213,19 +249,57 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
       shutil.copyfileobj(handle, self.wfile)
 
   def handle_separate(self) -> None:
+    # This now just saves the file and returns a temporary file ID
     try:
       fields, files = parse_multipart_form(self)
-      model_id = fields.get("model_id", "")
-      output_dir_text = fields.get("output_dir", "").strip()
-      command_override = fields.get("command", "")
       upload = files.get("audio")
+      if upload is None or not upload.get("filename"):
+        raise RuntimeError("Choose an input audio file.")
 
+      temp_dir = ROOT / "temp_uploads"
+      temp_dir.mkdir(parents=True, exist_ok=True)
+      # Use a safe ID for the temporary file
+      file_id = f"{int(time.time())}_{os.urandom(4).hex()}"
+      temp_file = temp_dir / file_id
+      with temp_file.open("wb") as handle:
+        handle.write(upload["data"])
+
+      self.send_json({
+        "ok": True,
+        "file_id": file_id,
+        "filename": upload["filename"]
+      })
+    except Exception as exc:
+      self.send_json({"ok": False, "error": str(exc)}, status=400)
+
+  def handle_separate_stream(self, query: str) -> None:
+    params = parse_qs(query)
+    model_id = params.get("model_id", [""])[0]
+    output_dir_text = params.get("output_dir", [""])[0].strip()
+    command_override = params.get("command", [""])[0]
+    file_id = params.get("file_id", [""])[0]
+    original_filename = params.get("filename", ["audio.wav"])[0]
+
+    self.send_response(200)
+    self.send_header("Content-Type", "text/event-stream")
+    self.send_header("Cache-Control", "no-cache")
+    self.send_header("Connection", "keep-alive")
+    self.end_headers()
+
+    temp_file_path = None
+    try:
       if not model_id:
         raise RuntimeError("Choose a model first.")
       if not output_dir_text:
         raise RuntimeError("Choose or type an output directory.")
-      if upload is None or not upload.get("filename"):
-        raise RuntimeError("Choose an input audio file.")
+
+      # Security: Validate file_id and construct path only within temp_uploads
+      if not file_id or not re.match(r"^[0-9]+_[0-9a-f]+$", file_id):
+        raise RuntimeError("Invalid file ID.")
+
+      temp_file_path = ROOT / "temp_uploads" / file_id
+      if not temp_file_path.exists():
+        raise RuntimeError("Input audio file not found on server.")
 
       catalog = load_catalog()
       model = next((item for item in catalog["models"] if item["id"] == model_id), None)
@@ -234,26 +308,29 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
 
       output_dir = Path(output_dir_text).expanduser().resolve()
       ensure_writable_output(output_dir)
-      session_dir = output_dir / f"{safe_name(upload['filename'])} - Stem Desk {time.strftime('%Y%m%d-%H%M%S')}"
+
+      session_dir = output_dir / f"{safe_name(original_filename)} - Stem Desk {time.strftime('%Y%m%d-%H%M%S')}"
       input_dir = session_dir / "_input"
       input_dir.mkdir(parents=True, exist_ok=True)
-      input_file = input_dir / Path(upload["filename"]).name
-      with input_file.open("wb") as handle:
-        handle.write(upload["data"])
 
-      stems, logs = run_separator(model, input_file, session_dir, command_override)
-      self.send_json({
-        "ok": True,
-        "session_dir": str(session_dir),
-        "stems": [
-          {"name": path.stem, "path": str(path), "url": f"/api/audio?path={path}"}
-          for path in stems
-          if "_input" not in path.parts
-        ],
-        "logs": logs,
-      })
+      input_file = input_dir / Path(original_filename).name
+      shutil.move(str(temp_file_path), str(input_file))
+      temp_file_path = None # Moved successfully
+
+      for chunk in run_separator_stream(model, input_file, session_dir, command_override):
+        self.wfile.write(chunk.encode("utf-8"))
+        self.wfile.flush()
+
     except Exception as exc:
-      self.send_json({"ok": False, "error": str(exc)}, status=400)
+      err_msg = f"event: error\ndata: {str(exc)}\n\n"
+      self.wfile.write(err_msg.encode("utf-8"))
+      self.wfile.flush()
+    finally:
+      if temp_file_path and temp_file_path.exists():
+        try:
+          temp_file_path.unlink()
+        except:
+          pass
 
 
 def main() -> None:
