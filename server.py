@@ -32,24 +32,6 @@ def safe_name(value: str) -> str:
   return value[:80] or "audio"
 
 
-def write_demo_wav(path: Path, frequency: float, duration: float = 8.0, sample_rate: int = 44100) -> None:
-  import math
-  import struct
-
-  frames = int(duration * sample_rate)
-  path.parent.mkdir(parents=True, exist_ok=True)
-  with wave.open(str(path), "wb") as handle:
-    handle.setnchannels(1)
-    handle.setsampwidth(2)
-    handle.setframerate(sample_rate)
-    for index in range(frames):
-      envelope = min(1.0, index / 5000, (frames - index) / 5000)
-      tone = math.sin(2 * math.pi * frequency * index / sample_rate)
-      overtone = math.sin(2 * math.pi * frequency * 1.5 * index / sample_rate) * 0.25
-      sample = int(max(-1.0, min(1.0, (tone + overtone) * 0.35 * envelope)) * 32767)
-      handle.writeframes(struct.pack("<h", sample))
-
-
 def ensure_writable_output(output_dir: Path) -> None:
   try:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -118,19 +100,6 @@ def parse_multipart_form(handler: SimpleHTTPRequestHandler) -> tuple[dict[str, s
 
 
 def run_separator_stream(model: dict, input_file: Path, output_dir: Path, command_override: str = ""):
-  runner = model.get("runner")
-
-  if runner == "demo":
-    stem_dir = output_dir / f"{safe_name(input_file.name)} - demo stems"
-    yield "event: log\ndata: Creating demo stems...\n\n"
-    time.sleep(1)
-    write_demo_wav(stem_dir / "instrumental.wav", 220)
-    write_demo_wav(stem_dir / "vocals.wav", 440)
-    yield "event: log\ndata: Created demo stems.\n\n"
-    stems = audio_files_under(stem_dir)
-    yield f"event: done\ndata: {json.dumps({'session_dir': str(output_dir.parent), 'stems': [{'name': p.stem, 'path': str(p), 'url': f'/api/audio?path={p}'} for p in stems if '_input' not in p.parts]})}\n\n"
-    return
-
   template = command_override.strip() or model.get("command", "").strip()
   if not template:
     yield f"event: error\ndata: This model needs a command before it can run locally.\n\n"
@@ -186,6 +155,14 @@ def run_separator_stream(model: dict, input_file: Path, output_dir: Path, comman
       return
 
     yield f"event: done\ndata: {json.dumps({'session_dir': str(output_dir.parent), 'stems': [{'name': p.stem, 'path': str(p), 'url': f'/api/audio?path={p}'} for p in stems if '_input' not in p.parts]})}\n\n"
+
+    # Cleanup input file and its folder
+    try:
+      input_folder = input_file.parent
+      if input_folder.name == "_input":
+        shutil.rmtree(input_folder)
+    except Exception as cleanup_exc:
+      yield f"event: log\ndata: Warning: Could not delete input folder: {str(cleanup_exc)}\n\n"
 
   except Exception as exc:
     yield f"event: error\ndata: {str(exc)}\n\n"
@@ -346,7 +323,7 @@ def main() -> None:
   args = parser.parse_args()
   os.chdir(ROOT)
   server = ThreadingHTTPServer(("127.0.0.1", args.port), StemDeskHandler)
-  print(f"Stem Desk is running at http://127.0.0.1:{args.port}/stem-daw.html")
+  print(f"Stem Desk is running at http://127.0.0.1:{args.port}/index.html")
   server.serve_forever()
 
 
