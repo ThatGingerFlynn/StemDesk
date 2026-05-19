@@ -31,14 +31,15 @@ def load_catalog() -> dict:
       if subfolder.is_dir():
         ckpt_files = list(subfolder.glob("*.ckpt"))
         onnx_files = list(subfolder.glob("*.onnx"))
+        pth_files = list(subfolder.glob("*.pth"))
         yaml_files = list(subfolder.glob("*.yaml"))
 
         model_path = None
         yaml_path = None
 
-        if (ckpt_files or onnx_files) and yaml_files:
-          # Try to find a matching pair of (ckpt/onnx) and yaml
-          for model_file in ckpt_files + onnx_files:
+        if (ckpt_files or onnx_files or pth_files) and yaml_files:
+          # Try to find a matching pair of (ckpt/onnx/pth) and yaml
+          for model_file in ckpt_files + onnx_files + pth_files:
             matching_yaml = subfolder / f"{model_file.stem}.yaml"
             if matching_yaml in yaml_files:
               model_path = model_file
@@ -47,7 +48,7 @@ def load_catalog() -> dict:
 
           # Fallback to first available if no exact match
           if not model_path:
-            model_path = (ckpt_files + onnx_files)[0]
+            model_path = (ckpt_files + onnx_files + pth_files)[0]
             yaml_path = yaml_files[0]
 
           model_id = f"custom-{subfolder.name}"
@@ -58,17 +59,32 @@ def load_catalog() -> dict:
           if not venv_python.exists():
             venv_python = Path(".venv-demucs/bin/python")
 
-          catalog["models"].append({
-            "id": model_id,
-            "name": f"Custom: {subfolder.name}",
-            "family": "Custom Model",
-            "stems": "vocals + instrumental",
-            "availability": "Local custom model",
-            "runner": "command",
-            "command": f"{shlex.quote(str(venv_python))} -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(model_path.name)} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
-            "notes": f"Custom model from models/{subfolder.name}" +
-                     ("" if model_path.stem == yaml_path.stem else f". Warning: {model_path.name} and {yaml_path.name} should have the same base name.")
-          })
+          # Determine if it's likely an MSST model or audio-separator model
+          is_msst = model_path.suffix == ".pth" or subfolder.name.lower().startswith("msst") or yaml_path.name == "config.yaml"
+
+          if is_msst:
+             catalog["models"].append({
+              "id": model_id,
+              "name": f"Custom (MSST): {subfolder.name}",
+              "family": "MSST",
+              "stems": "depends on config",
+              "availability": "Requires local MSST installation",
+              "runner": "manual",
+              "command": f"python inference.py --model_type {subfolder.name} --config_path {shlex.quote(str(yaml_path))} --start_check_point {shlex.quote(str(model_path))} --input_file {{input_file}} --output_dir {{output_dir}}",
+              "notes": f"MSST-style model found in models/{subfolder.name}. You must edit the command to point to your MSST 'inference.py'."
+            })
+          else:
+            catalog["models"].append({
+              "id": model_id,
+              "name": f"Custom: {subfolder.name}",
+              "family": "Custom Model",
+              "stems": "vocals + instrumental",
+              "availability": "Local custom model",
+              "runner": "command",
+              "command": f"{shlex.quote(str(venv_python))} -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(model_path.name)} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
+              "notes": f"Custom model from models/{subfolder.name}" +
+                       ("" if model_path.stem == yaml_path.stem else f". Warning: {model_path.name} and {yaml_path.name} should have the same base name.")
+            })
 
   return catalog
 
