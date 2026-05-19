@@ -23,7 +23,36 @@ AUDIO_EXTENSIONS = {".aac", ".aif", ".aiff", ".flac", ".m4a", ".mp3", ".ogg", ".
 
 
 def load_catalog() -> dict:
-  return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+  catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+
+  models_dir = ROOT / "models"
+  if models_dir.exists():
+    for subfolder in models_dir.iterdir():
+      if subfolder.is_dir():
+        ckpt_files = list(subfolder.glob("*.ckpt"))
+        yaml_files = list(subfolder.glob("*.yaml"))
+
+        if ckpt_files and yaml_files:
+          # Use the first ckpt file found in the subfolder
+          ckpt_path = ckpt_files[0]
+          model_id = f"custom-{subfolder.name}"
+
+          # Check if this model ID already exists to avoid duplicates
+          if any(m["id"] == model_id for m in catalog["models"]):
+            continue
+
+          catalog["models"].append({
+            "id": model_id,
+            "name": f"Custom: {subfolder.name}",
+            "family": "Roformer (Custom)",
+            "stems": "vocals + instrumental",
+            "availability": "Local custom model",
+            "runner": "command",
+            "command": f".venv-demucs/bin/python -m audio_separator.utils.cli {{input_file}} --model_filename {ckpt_path.name} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
+            "notes": f"Custom Roformer model from models/{subfolder.name}"
+          })
+
+  return catalog
 
 
 def safe_name(value: str) -> str:
@@ -181,6 +210,8 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
       return self.send_json(load_catalog())
     if parsed.path == "/api/audio":
       return self.send_audio(parsed.query)
+    if parsed.path == "/api/separate-stream":
+      return self.handle_separate_stream(parsed.query)
     return super().do_GET()
 
   def do_POST(self) -> None:
@@ -189,16 +220,6 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
       # We no longer handle multipart in the same way for streaming
       return self.handle_separate()
     self.send_error(404, "Unknown endpoint")
-
-  def do_GET(self) -> None:
-    parsed = urlparse(self.path)
-    if parsed.path == "/api/models":
-      return self.send_json(load_catalog())
-    if parsed.path == "/api/audio":
-      return self.send_audio(parsed.query)
-    if parsed.path == "/api/separate-stream":
-      return self.handle_separate_stream(parsed.query)
-    return super().do_GET()
 
   def send_json(self, payload: dict, status: int = 200) -> None:
     body = json.dumps(payload, indent=2).encode("utf-8")
