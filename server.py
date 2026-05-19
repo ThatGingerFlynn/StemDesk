@@ -55,9 +55,8 @@ def load_catalog() -> dict:
           if any(m["id"] == model_id for m in catalog["models"]):
             continue
 
-          venv_python = ROOT / ".venv-demucs" / ("Scripts" if os.name == "nt" else "bin") / "python"
-          if not venv_python.exists():
-            venv_python = Path(".venv-demucs/bin/python")
+          # We use 'python' as a placeholder for the venv python in the command template.
+          # format_command will replace it with the actual venv python path.
 
           # Determine if it's likely an MSST model or audio-separator model
           is_msst = model_path.suffix == ".pth" or subfolder.name.lower().startswith("msst") or yaml_path.name == "config.yaml"
@@ -70,7 +69,7 @@ def load_catalog() -> dict:
               "stems": "depends on config",
               "availability": "Requires local MSST installation",
               "runner": "manual",
-              "command": f"python inference.py --model_type {subfolder.name} --config_path {shlex.quote(str(yaml_path))} --start_check_point {shlex.quote(str(model_path))} --input_file {{input_file}} --output_dir {{output_dir}}",
+              "command": f"python inference.py --model_type {subfolder.name} --config_path {shlex.quote(yaml_path.as_posix())} --start_check_point {shlex.quote(model_path.as_posix())} --input_file {{input_file}} --output_dir {{output_dir}}",
               "notes": f"MSST-style model found in models/{subfolder.name}. You must edit the command to point to your MSST 'inference.py'."
             })
           else:
@@ -81,7 +80,7 @@ def load_catalog() -> dict:
               "stems": "vocals + instrumental",
               "availability": "Local custom model",
               "runner": "command",
-              "command": f"{shlex.quote(str(venv_python))} -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(model_path.name)} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
+              "command": f"python -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(model_path.name)} --model_file_dir {shlex.quote(subfolder.as_posix())} --output_dir {{output_dir}}",
               "notes": f"Custom model from models/{subfolder.name}" +
                        ("" if model_path.stem == yaml_path.stem else f". Warning: {model_path.name} and {yaml_path.name} should have the same base name.")
             })
@@ -118,14 +117,21 @@ def audio_files_under(folder: Path) -> list[Path]:
 
 
 def format_command(template: str, input_file: Path, output_dir: Path) -> list[str]:
-  command = template.format(
-    input_file=shlex.quote(str(input_file)),
-    output_dir=shlex.quote(str(output_dir)),
-  )
-  parts = shlex.split(command)
-  if parts and parts[0] == "python":
-    parts[0] = sys.executable
-  return parts
+  # We use shlex.split on the template FIRST, so placeholders are not prematurely escaped or split.
+  # However, we must ensure the template itself uses {input_file} and {output_dir} correctly.
+  parts = shlex.split(template)
+  formatted_parts = []
+  for part in parts:
+    formatted_part = part.format(
+      input_file=str(input_file),
+      output_dir=str(output_dir),
+    )
+    formatted_parts.append(formatted_part)
+
+  if formatted_parts and formatted_parts[0] in {"python", "python3"}:
+    # If we are running in a venv, sys.executable is the venv python.
+    formatted_parts[0] = sys.executable
+  return formatted_parts
 
 
 def parse_multipart_form(handler: SimpleHTTPRequestHandler) -> tuple[dict[str, str], dict[str, dict]]:

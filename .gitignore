@@ -1,0 +1,6 @@
+__pycache__/
+.venv-demucs/
+.cache/
+temp_uploads/
+*.pyc
+.DS_Store

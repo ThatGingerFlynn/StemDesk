@@ -7,7 +7,7 @@
       "stems": "vocals + instrumental",
       "availability": "Freely available; downloads automatically through Demucs",
       "runner": "command",
-      "command": ".venv-demucs/bin/python -m demucs --two-stems=vocals -n htdemucs_ft --out {output_dir} {input_file}",
+      "command": "python -m demucs --two-stems=vocals -n htdemucs_ft --out {output_dir} {input_file}",
       "expected_output": "demucs",
       "notes": "Good first local test after running setup-demucs.sh. Reliable, simple, and does not need UVR."
     },
@@ -18,7 +18,7 @@
       "stems": "vocals, drums, bass, guitar, piano, other",
       "availability": "Freely available; downloads automatically through Demucs",
       "runner": "command",
-      "command": ".venv-demucs/bin/python -m demucs -n htdemucs_6s --out {output_dir} {input_file}",
+      "command": "python -m demucs -n htdemucs_6s --out {output_dir} {input_file}",
       "expected_output": "demucs",
       "notes": "Useful when you want more DAW-style lanes from one local model. Run setup-demucs.sh first."
     },
