@@ -26,31 +26,68 @@ def load_catalog() -> dict:
   catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
   models_dir = ROOT / "models"
-  if models_dir.exists():
-    for subfolder in models_dir.iterdir():
-      if subfolder.is_dir():
-        ckpt_files = list(subfolder.glob("*.ckpt"))
-        yaml_files = list(subfolder.glob("*.yaml"))
+  if not models_dir.exists():
+    return catalog
 
-        if ckpt_files and yaml_files:
-          # Use the first ckpt file found in the subfolder
+  # 1. Check for subfolders (Legacy/Organized approach)
+  for item in models_dir.iterdir():
+    if item.is_dir():
+      ckpt_files = list(item.glob("*.ckpt"))
+      yaml_files = list(item.glob("*.yaml"))
+
+      if ckpt_files and yaml_files:
+        # If there's exactly one of each, pair them even if names differ
+        if len(ckpt_files) == 1 and len(yaml_files) == 1:
           ckpt_path = ckpt_files[0]
-          model_id = f"custom-{subfolder.name}"
+          yaml_path = yaml_files[0]
+        else:
+          # Try to find matching names
+          ckpt_path = None
+          yaml_path = None
+          for ckpt in ckpt_files:
+            expected_yaml = ckpt.with_suffix(".yaml")
+            if expected_yaml in yaml_files:
+              ckpt_path = ckpt
+              yaml_path = expected_yaml
+              break
 
-          # Check if this model ID already exists to avoid duplicates
-          if any(m["id"] == model_id for m in catalog["models"]):
-            continue
+          if not ckpt_path:
+            ckpt_path = ckpt_files[0] # Fallback to first
 
-          catalog["models"].append({
-            "id": model_id,
-            "name": f"Custom: {subfolder.name}",
-            "family": "Roformer (Custom)",
-            "stems": "vocals + instrumental",
-            "availability": "Local custom model",
-            "runner": "command",
-            "command": f".venv-demucs/bin/python -m audio_separator.utils.cli {{input_file}} --model_filename {ckpt_path.name} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
-            "notes": f"Custom Roformer model from models/{subfolder.name}"
-          })
+        model_id = f"custom-{item.name}"
+        if any(m["id"] == model_id for m in catalog["models"]):
+          continue
+
+        catalog["models"].append({
+          "id": model_id,
+          "name": f"Custom: {item.name}",
+          "family": "Roformer (Custom)",
+          "stems": "vocals + instrumental",
+          "availability": "Local custom model",
+          "runner": "command",
+          "command": f".venv-demucs/bin/python -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(ckpt_path.name)} --model_file_dir {shlex.quote(str(item))} --output_dir {{output_dir}}",
+          "notes": f"Custom model from models/{item.name}"
+        })
+
+  # 2. Check for files directly in models/ (User's latest request)
+  ckpt_files = list(models_dir.glob("*.ckpt"))
+  for ckpt_path in ckpt_files:
+    yaml_path = ckpt_path.with_suffix(".yaml")
+    if yaml_path.exists():
+      model_id = f"custom-file-{ckpt_path.stem}"
+      if any(m["id"] == model_id for m in catalog["models"]):
+        continue
+
+      catalog["models"].append({
+        "id": model_id,
+        "name": f"Custom: {ckpt_path.stem}",
+        "family": "Roformer (Custom)",
+        "stems": "vocals + instrumental",
+        "availability": "Local custom model",
+        "runner": "command",
+        "command": f".venv-demucs/bin/python -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(ckpt_path.name)} --model_file_dir {shlex.quote(str(models_dir))} --output_dir {{output_dir}}",
+        "notes": f"Custom model file: models/{ckpt_path.name}"
+      })
 
   return catalog
 
