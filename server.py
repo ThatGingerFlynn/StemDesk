@@ -30,26 +30,44 @@ def load_catalog() -> dict:
     for subfolder in models_dir.iterdir():
       if subfolder.is_dir():
         ckpt_files = list(subfolder.glob("*.ckpt"))
+        onnx_files = list(subfolder.glob("*.onnx"))
         yaml_files = list(subfolder.glob("*.yaml"))
 
-        if ckpt_files and yaml_files:
-          # Use the first ckpt file found in the subfolder
-          ckpt_path = ckpt_files[0]
-          model_id = f"custom-{subfolder.name}"
+        model_path = None
+        yaml_path = None
 
-          # Check if this model ID already exists to avoid duplicates
+        if (ckpt_files or onnx_files) and yaml_files:
+          # Try to find a matching pair of (ckpt/onnx) and yaml
+          for model_file in ckpt_files + onnx_files:
+            matching_yaml = subfolder / f"{model_file.stem}.yaml"
+            if matching_yaml in yaml_files:
+              model_path = model_file
+              yaml_path = matching_yaml
+              break
+
+          # Fallback to first available if no exact match
+          if not model_path:
+            model_path = (ckpt_files + onnx_files)[0]
+            yaml_path = yaml_files[0]
+
+          model_id = f"custom-{subfolder.name}"
           if any(m["id"] == model_id for m in catalog["models"]):
             continue
+
+          venv_python = ROOT / ".venv-demucs" / ("Scripts" if os.name == "nt" else "bin") / "python"
+          if not venv_python.exists():
+            venv_python = Path(".venv-demucs/bin/python")
 
           catalog["models"].append({
             "id": model_id,
             "name": f"Custom: {subfolder.name}",
-            "family": "Roformer (Custom)",
+            "family": "Custom Model",
             "stems": "vocals + instrumental",
             "availability": "Local custom model",
             "runner": "command",
-            "command": f".venv-demucs/bin/python -m audio_separator.utils.cli {{input_file}} --model_filename {ckpt_path.name} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
-            "notes": f"Custom Roformer model from models/{subfolder.name}"
+            "command": f"{shlex.quote(str(venv_python))} -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(model_path.name)} --model_file_dir {shlex.quote(str(subfolder))} --output_dir {{output_dir}}",
+            "notes": f"Custom model from models/{subfolder.name}" +
+                     ("" if model_path.stem == yaml_path.stem else f". Warning: {model_path.name} and {yaml_path.name} should have the same base name.")
           })
 
   return catalog
@@ -165,22 +183,32 @@ def run_separator_stream(model: dict, input_file: Path, output_dir: Path, comman
     full_output = []
     for line in process.stdout:
       full_output.append(line)
+      # Also print to server console for easier debugging
+      sys.stdout.write(f"[Separator] {line}")
+      sys.stdout.flush()
       yield f"event: log\ndata: {line.strip()}\n\n"
 
     process.wait()
+    full_text = "".join(full_output)
 
-    if "No module named demucs" in "".join(full_output):
+    if "No module named demucs" in full_text:
       yield "event: error\ndata: Demucs is not installed for this Python. Install it with: python3 -m pip install demucs\n\n"
       return
 
     if process.returncode != 0:
-      tail = "".join(full_output[-12:]).strip()
-      yield f"event: error\ndata: Separator exited with code {process.returncode}.\n{tail}\n\n"
+      tail = "".join(full_output[-20:]).strip()
+      error_msg = f"Separator exited with code {process.returncode}.\n{tail}"
+      if "not found in supported model files" in full_text:
+        error_msg += "\n\nTip: audio-separator requires custom models to have specific names. Try renaming your .ckpt and .yaml files to match an official model name (e.g. BS-Roformer-SW.ckpt and BS-Roformer-SW.yaml) to bypass validation."
+      yield f"event: error\ndata: {error_msg}\n\n"
       return
 
     stems = [path for path in audio_files_under(output_dir) if "_input" not in path.parts]
     if not stems:
-      yield "event: error\ndata: The separator finished, but no audio stems were found in the output folder.\n\n"
+      all_files = [str(p.relative_to(output_dir)) for p in output_dir.rglob("*") if p.is_file()]
+      file_list = f"\nFiles found in output folder: {', '.join(all_files)}" if all_files else "\nOutput folder is empty."
+      tail = "".join(full_output[-20:]).strip()
+      yield f"event: error\ndata: The separator finished, but no audio stems were found in the output folder.{file_list}\n\nLast output:\n{tail}\n\n"
       return
 
     yield f"event: done\ndata: {json.dumps({'session_dir': str(output_dir.parent), 'stems': [{'name': p.stem, 'path': str(p), 'url': f'/api/audio?path={p}'} for p in stems if '_input' not in p.parts]})}\n\n"
