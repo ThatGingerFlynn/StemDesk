@@ -9,8 +9,12 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
 # Check for Python
-if ! command -v python3 &> /dev/null; then
-    echo "Error: python3 is not installed."
+if command -v python3 &> /dev/null; then
+    PYTHON_EXE="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_EXE="python"
+else
+    echo "Error: python is not installed."
     exit 1
 fi
 
@@ -20,10 +24,19 @@ if [ ! -d ".venv-demucs" ]; then
     bash setup-demucs.sh
 fi
 
+# Determine the venv python path
+if [[ -f ".venv-demucs/Scripts/python" ]]; then
+  VENV_PYTHON=".venv-demucs/Scripts/python"
+elif [[ -f ".venv-demucs/bin/python" ]]; then
+  VENV_PYTHON=".venv-demucs/bin/python"
+else
+  VENV_PYTHON="$PYTHON_EXE"
+fi
+
 # Start the server and open the browser
 echo "Starting Stem Desk..."
 # We run the server in the background so we can open the browser
-python3 server.py --port 8765 &
+"$VENV_PYTHON" server.py --port 8765 &
 SERVER_PID=$!
 
 # Function to kill the server on exit
