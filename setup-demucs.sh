@@ -32,7 +32,13 @@ $PYTHON_EXE -m venv .venv-demucs
 # or ensure soundfile is the primary backend.
 .venv-demucs/bin/python -m pip install soundfile
 .venv-demucs/bin/python -m pip install "torchaudio<2.5.0"
-.venv-demucs/bin/python -m pip install demucs
+# Install demucs and audio-separator.
+# We try to install with hardware acceleration extras depending on the platform.
+if [[ "$(uname)" == "Darwin" ]]; then
+  .venv-demucs/bin/python -m pip install demucs "audio-separator[coreml]" || .venv-demucs/bin/python -m pip install demucs audio-separator
+else
+  .venv-demucs/bin/python -m pip install demucs "audio-separator[gpu]" || .venv-demucs/bin/python -m pip install demucs audio-separator
+fi
 .venv-demucs/bin/python -m pip uninstall -y torchcodec || true
 
 .venv-demucs/bin/python -m demucs --help >/dev/null

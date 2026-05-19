@@ -28,9 +28,20 @@ This script will:
 
 Stem Desk is designed to be extensible. You can add new models by editing the `model-catalog.json` file.
 
-### UVR and Custom Models
+### Roformer and Custom Local Models
 
-If you have [audio-separator](https://github.com/Facelytical/audio-separator) or another UVR-compatible CLI installed, you can add it to the catalog.
+Stem Desk supports adding custom Roformer models (and other UVR-compatible models that use `.ckpt` and `.yaml` files).
+
+To add a custom model:
+1. Create a subfolder inside the `models/` directory (e.g., `models/my-custom-roformer/`).
+2. Place your `.ckpt` file and its associated `.yaml` file inside that subfolder.
+3. Restart the Stem Desk server.
+
+The model will automatically appear in the model list as "Custom: [subfolder name]".
+
+### Manual Catalog Entries
+
+If you have [audio-separator](https://github.com/Facelytical/audio-separator) or another UVR-compatible CLI installed, you can also manually add it to `model-catalog.json`.
 
 Example entry for a UVR model:
 
