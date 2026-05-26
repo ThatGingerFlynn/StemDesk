@@ -37,7 +37,7 @@ if %ERRORLEVEL% equ 0 (
 ) else (
     echo No NVIDIA GPU detected. Installing standard versions...
     .venv-demucs\Scripts\python -m pip install "torchaudio<2.5.0"
-    .venv-demucs\Scripts\python -m pip install demucs audio-separator
+    .venv-demucs\Scripts\python -m pip install demucs "audio-separator[cpu]" onnxruntime
 )
 
 :: Uninstall torchcodec if present

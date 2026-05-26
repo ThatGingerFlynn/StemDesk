@@ -80,7 +80,7 @@ def load_catalog() -> dict:
               "stems": "vocals + instrumental",
               "availability": "Local custom model",
               "runner": "command",
-              "command": f"python -m audio_separator.utils.cli {{input_file}} --model_filename {shlex.quote(model_path.name)} --model_file_dir {shlex.quote(subfolder.as_posix())} --output_dir {{output_dir}}",
+              "command": f"python stemdesk_audio_separator.py --input_file {{input_file}} --output_dir {{output_dir}} --model_path {shlex.quote(model_path.as_posix())} --config_path {shlex.quote(yaml_path.as_posix())} --device {{device}}",
               "notes": f"Custom model from models/{subfolder.name}" +
                        ("" if model_path.stem == yaml_path.stem else f". Warning: {model_path.name} and {yaml_path.name} should have the same base name.")
             })
@@ -116,7 +116,7 @@ def audio_files_under(folder: Path) -> list[Path]:
   )
 
 
-def format_command(template: str, input_file: Path, output_dir: Path) -> list[str]:
+def format_command(template: str, input_file: Path, output_dir: Path, device: str = "auto") -> list[str]:
   # We use shlex.split on the template FIRST, so placeholders are not prematurely escaped or split.
   # However, we must ensure the template itself uses {input_file} and {output_dir} correctly.
   parts = shlex.split(template)
@@ -125,6 +125,7 @@ def format_command(template: str, input_file: Path, output_dir: Path) -> list[st
     formatted_part = part.format(
       input_file=str(input_file),
       output_dir=str(output_dir),
+      device=device,
     )
     formatted_parts.append(formatted_part)
 
@@ -168,14 +169,14 @@ def parse_multipart_form(handler: SimpleHTTPRequestHandler) -> tuple[dict[str, s
   return fields, files
 
 
-def run_separator_stream(model: dict, input_file: Path, output_dir: Path, command_override: str = ""):
+def run_separator_stream(model: dict, input_file: Path, output_dir: Path, command_override: str = "", device: str = "auto"):
   template = command_override.strip() or model.get("command", "").strip()
   if not template:
     yield f"event: error\ndata: This model needs a command before it can run locally.\n\n"
     return
 
   output_dir.mkdir(parents=True, exist_ok=True)
-  command = format_command(template, input_file, output_dir)
+  command = format_command(template, input_file, output_dir, device)
   executable = shutil.which(command[0])
   if executable is None and command[0] not in {"python", "python3"}:
     yield f"event: error\ndata: Could not find '{command[0]}' on PATH.\n\n"
@@ -215,6 +216,9 @@ def run_separator_stream(model: dict, input_file: Path, output_dir: Path, comman
 
     if "No module named demucs" in full_text:
       yield "event: error\ndata: Demucs is not installed for this Python. Install it with: python3 -m pip install demucs\n\n"
+      return
+    if "No module named 'onnxruntime'" in full_text or "No module named onnxruntime" in full_text:
+      yield "event: error\ndata: audio-separator is missing onnxruntime, which Roformer/UVR models need. Run setup-demucs.sh again, or install it with: .venv-demucs/bin/python -m pip install 'audio-separator[cpu]' onnxruntime\n\n"
       return
 
     if process.returncode != 0:
@@ -327,6 +331,7 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
     model_id = params.get("model_id", [""])[0]
     output_dir_text = params.get("output_dir", [""])[0].strip()
     command_override = params.get("command", [""])[0]
+    device = params.get("device", ["auto"])[0]
     file_id = params.get("file_id", [""])[0]
     original_filename = params.get("filename", ["audio.wav"])[0]
 
@@ -367,7 +372,10 @@ class StemDeskHandler(SimpleHTTPRequestHandler):
       shutil.move(str(temp_file_path), str(input_file))
       temp_file_path = None # Moved successfully
 
-      for chunk in run_separator_stream(model, input_file, session_dir, command_override):
+      if device not in {"auto", "cpu", "mps", "cuda"}:
+        raise RuntimeError("Unknown processing device.")
+
+      for chunk in run_separator_stream(model, input_file, session_dir, command_override, device):
         try:
           self.wfile.write(chunk.encode("utf-8"))
           self.wfile.flush()

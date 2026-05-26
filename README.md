@@ -38,6 +38,7 @@ To add a custom model:
 3. Restart the Stem Desk server.
 
 The model will automatically appear in the model list as "Custom: [subfolder name]".
+Custom `.ckpt`/`.yaml` Roformer models run through Stem Desk's local audio-separator bridge, which passes the checkpoint and config directly instead of requiring an official audio-separator model filename. Use the Processing device menu to force CPU, Apple MPS, or NVIDIA CUDA when auto-selection is too aggressive.
 
 ### Manual Catalog Entries
 
@@ -75,6 +76,7 @@ If you prefer to run things manually:
    ```bash
    bash setup-demucs.sh
    ```
+   This installs Demucs plus the CPU audio-separator dependencies needed for Roformer/UVR-style models.
 
 2. **Start the Server:**
    ```bash
