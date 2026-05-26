@@ -58,6 +58,15 @@
               <select id="modelSelect"></select>
             </label>
             <label class="field">
+              <span>Processing device</span>
+              <select id="deviceSelect">
+                <option value="auto">Auto</option>
+                <option value="cpu">CPU</option>
+                <option value="mps">Apple MPS</option>
+                <option value="cuda">NVIDIA CUDA</option>
+              </select>
+            </label>
+            <label class="field">
               <span>Output folder</span>
               <input id="outputDir" type="text" value="">
             </label>

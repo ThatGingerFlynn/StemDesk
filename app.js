@@ -13,6 +13,7 @@ const durationReadout = document.querySelector("#durationReadout");
 const separatorForm = document.querySelector("#separatorForm");
 const sourceAudio = document.querySelector("#sourceAudio");
 const modelSelect = document.querySelector("#modelSelect");
+const deviceSelect = document.querySelector("#deviceSelect");
 const outputDir = document.querySelector("#outputDir");
 const commandOverride = document.querySelector("#commandOverride");
 const commandField = document.querySelector(".command-field");
@@ -115,6 +116,7 @@ async function runLocalSeparation(event) {
       model_id: modelSelect.value,
       output_dir: outputDir.value,
       command: commandOverride.value,
+      device: deviceSelect.value,
       file_id: uploadPayload.file_id,
       filename: uploadPayload.filename
     });
@@ -452,6 +454,7 @@ function setBusy(isBusy) {
   filePicker.disabled = isBusy;
   sourceAudio.disabled = isBusy;
   modelSelect.disabled = isBusy;
+  deviceSelect.disabled = isBusy;
   outputDir.disabled = isBusy;
   commandOverride.disabled = isBusy;
 }
